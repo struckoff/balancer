@@ -26,7 +26,7 @@ func (h *Router) Store(w http.ResponseWriter, r *http.Request, ps httprouter.Par
 		defer r.Body.Close()
 	}
 	key := ps.ByName("key")
-	n, err := h.GetNode(key)
+	n, err := h.LocateKey(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -51,7 +51,7 @@ func (h *Router) Receive(w http.ResponseWriter, r *http.Request, ps httprouter.P
 		defer r.Body.Close()
 	}
 	key := ps.ByName("key")
-	n, err := h.GetNode(key)
+	n, err := h.LocateKey(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -69,26 +69,11 @@ func (h *Router) Receive(w http.ResponseWriter, r *http.Request, ps httprouter.P
 	}
 }
 func (h *Router) Explore(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	var wg sync.WaitGroup
-	res := NewSyncMap()
-	ns, err := h.bal.Nodes()
+	res, err := h.nodeKeys()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for _, n := range ns {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, n Node, sm *SyncMap) {
-			defer wg.Done()
-			keys, err := n.Explore()
-			if err != nil {
-				log.Printf("%s: %s", n.ID(), err.Error())
-				return
-			}
-			sm.Put(n.ID(), keys)
-		}(&wg, n, res)
-	}
-	wg.Wait()
 	b, err := res.JsonMarshal()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -120,4 +105,27 @@ func (h *Router) nodes() ([]rpcapi.NodeMeta, error) {
 		metas[iter] = n.Meta()
 	}
 	return metas, nil
+}
+
+func (h *Router) nodeKeys() (*SyncMap, error) {
+	var wg sync.WaitGroup
+	res := NewSyncMap()
+	ns, err := h.bal.Nodes()
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range ns {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, n Node, sm *SyncMap) {
+			defer wg.Done()
+			keys, err := n.Explore()
+			if err != nil {
+				log.Printf("%s: %s", n.ID(), err.Error())
+				return
+			}
+			sm.Put(n.ID(), keys)
+		}(&wg, n, res)
+	}
+	wg.Wait()
+	return res, nil
 }

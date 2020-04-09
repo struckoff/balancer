@@ -6,4 +6,5 @@ type Balancer interface {
 	SetNodes(ns []Node) error
 	LocateKey(key string) (Node, error)
 	Nodes() ([]Node, error)
+	GetNode(id string) (Node, error)
 }

@@ -13,6 +13,7 @@ type Node interface {
 	Remove(key string) error             // Remove value for a given key
 	Explore() ([]string, error)          // Return all keys in a cluster
 	Meta() rpcapi.NodeMeta               // Return information about cluster units
+	Move(map[Node][]string) error        // Move kv pairs to another node
 }
 
 //// NodeMeta represents node meta information with exposed fields

@@ -10,27 +10,12 @@ import (
 	"github.com/struckoff/kvrouter/ttl"
 	"log"
 	"net/http"
+	"sync"
 )
 
 type Host struct {
 	kvr    *router.Router
 	checks *ttl.ChecksMap
-}
-
-func deadHandler(nodeID string) func() {
-	return func() {
-		log.Printf("node(%s) seems to be dead", nodeID)
-	}
-}
-
-func (h *Host) removeHandler(nodeID string) func() {
-	return func() {
-		if err := h.kvr.RemoveNode(nodeID); err != nil {
-			log.Printf("Error removing node(%s): %s", nodeID, err.Error())
-		}
-		h.checks.Delete(nodeID)
-		log.Printf("node(%s) removed", nodeID)
-	}
 }
 
 func (h *Host) RPCRegister(ctx context.Context, in *rpcapi.NodeMeta) (*rpcapi.Empty, error) {
@@ -50,22 +35,74 @@ func (h *Host) RPCRegister(ctx context.Context, in *rpcapi.NodeMeta) (*rpcapi.Em
 		return nil, err
 	}
 	log.Printf("node(%s) registered", en.ID())
+	if err := h.redistributeKeys(); err != nil {
+		return nil, err
+	}
 	return &rpcapi.Empty{}, nil
 }
-
 func (h *Host) RPCHeartbeat(ctx context.Context, in *rpcapi.Ping) (*rpcapi.Empty, error) {
 	if ok := h.checks.Update(in.NodeID); !ok {
 		return nil, errors.Errorf("unable to found check for node(%s)", in.NodeID)
 	}
 	return &rpcapi.Empty{}, nil
 }
-
 func (h *Host) RunHTTPServer(addr string) error {
 	r := h.kvr.HTTPHandler()
 	log.Printf("Run server [%s]", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		return err
 	}
+	return nil
+}
+
+func deadHandler(nodeID string) func() {
+	return func() {
+		log.Printf("node(%s) seems to be dead", nodeID)
+	}
+}
+func (h *Host) removeHandler(nodeID string) func() {
+	return func() {
+		if err := h.kvr.RemoveNode(nodeID); err != nil {
+			log.Printf("Error removing node(%s): %s", nodeID, err.Error())
+			return
+		}
+		if err := h.redistributeKeys(); err != nil {
+			log.Printf("Error redistributing keys: %s", err.Error())
+			return
+		}
+		h.checks.Delete(nodeID)
+		log.Printf("node(%s) removed", nodeID)
+	}
+}
+
+func (h *Host) redistributeKeys() error {
+	var wg sync.WaitGroup
+	ns, err := h.kvr.GetNodes()
+	if err != nil {
+		return err
+	}
+	for _, n := range ns {
+		go func(n router.Node, wg *sync.WaitGroup) {
+			res := make(map[router.Node][]string)
+			keys, err := n.Explore()
+			if err != nil {
+				log.Printf("failed to explore node(%s): %s", n.ID(), err.Error())
+				return
+			}
+			for iter := range keys {
+				en, err := h.kvr.LocateKey(keys[iter])
+				if err != nil {
+					log.Printf("failed to locate key(%s): %s", keys[iter], err.Error())
+					continue
+				}
+				if en.ID() != n.ID() {
+					res[en] = append(res[en], keys[iter])
+				}
+			}
+			n.Move(res)
+		}(n, &wg)
+	}
+	wg.Wait()
 	return nil
 }
 

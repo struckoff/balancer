@@ -27,7 +27,7 @@ func (h *Router) RemoveNode(id string) error {
 }
 
 // Returns node from kvrouter by given key.
-func (h *Router) GetNode(key string) (Node, error) {
+func (h *Router) LocateKey(key string) (Node, error) {
 	//di := DataItem(key)
 	nb, err := h.bal.LocateKey(key)
 	if err != nil {
@@ -40,8 +40,16 @@ func (h *Router) GetNode(key string) (Node, error) {
 	return n, nil
 }
 
+func (h *Router) GetNodes() ([]Node, error) {
+	return h.bal.Nodes()
+}
+
 func (h *Router) SetNodes(ns []Node) error {
 	return h.bal.SetNodes(ns)
+}
+
+func (h *Router) GetNode(id string) (Node, error) {
+	return h.bal.GetNode(id)
 }
 
 //func (h *Router) relocate(locations map[Node][]string) {

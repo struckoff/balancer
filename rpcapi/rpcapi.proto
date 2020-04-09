@@ -14,6 +14,10 @@ message KeyReq {
 }
 
 message MoveReq{
+	repeated KeyList KL = 1;
+}
+
+message KeyList{
 	NodeMeta Node = 1;
 	repeated string Keys = 2;
 }

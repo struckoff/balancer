@@ -84,3 +84,15 @@ func (sb *SFCBalancer) Nodes() ([]router.Node, error) {
 	}
 	return ns, nil
 }
+
+func (sb *SFCBalancer) GetNode(id string) (router.Node, error) {
+	nb, ok := sb.bal.GetNode(id)
+	if !ok {
+		return nil, errors.New("node not found")
+	}
+	n, ok := nb.(router.Node)
+	if !ok {
+		return nil, errors.New("wrong node type")
+	}
+	return n, nil
+}

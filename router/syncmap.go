@@ -36,6 +36,16 @@ func (sm *SyncMap) JsonMarshal() ([]byte, error) {
 	return b, err
 }
 
+func (sm *SyncMap) Copy() map[string][]string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	res := make(map[string][]string, len(sm.s))
+	for k, v := range sm.s {
+		res[k] = v
+	}
+	return res
+}
+
 func NewSyncMap() *SyncMap {
 	return &SyncMap{s: make(map[string][]string)}
 }

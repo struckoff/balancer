@@ -89,15 +89,25 @@ func (n *ExternalNode) Meta() rpcapi.NodeMeta {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return rpcapi.NodeMeta{
-		ID:       n.id,
-		Address:  n.address,
-		Power:    n.p.Get(),
-		Capacity: n.p.Get(),
+		ID:         n.id,
+		Address:    n.address,
+		RPCAddress: n.rpcaddress,
+		Power:      n.p.Get(),
+		Capacity:   n.p.Get(),
 	}
 }
 
-func (n *ExternalNode) Move(m *rpcapi.MoveReq) error {
-	_, err := n.rpcclient.RPCMove(context.TODO(), m, nil)
+func (n *ExternalNode) Move(nk map[Node][]string) error {
+	mr := &rpcapi.MoveReq{}
+	for en, keys := range nk {
+		meta := en.Meta()
+		kl := &rpcapi.KeyList{
+			Node: &meta,
+			Keys: keys,
+		}
+		mr.KL = append(mr.KL, kl)
+	}
+	_, err := n.rpcclient.RPCMove(context.TODO(), mr)
 	return err
 }
 
@@ -119,7 +129,7 @@ func NewExternalNode(meta *rpcapi.NodeMeta) (*ExternalNode, error) {
 
 func NewExternalNodeByAddr(rpcaddr string) (*ExternalNode, error) {
 	c, err := enClient(rpcaddr)
-	if err!=nil{
+	if err != nil {
 		return nil, err
 	}
 	meta, err := c.RPCMeta(context.TODO(), &rpcapi.Empty{})
