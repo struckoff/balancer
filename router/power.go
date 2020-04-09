@@ -1,4 +1,4 @@
-package kvrouter
+package router
 
 type Power struct {
 	p float64

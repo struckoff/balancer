@@ -1,4 +1,4 @@
-package kvrouter
+package router
 
 type Capacity struct {
 	c float64

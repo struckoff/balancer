@@ -1,28 +1,24 @@
-package kvrouter
+package router
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
+	"github.com/struckoff/kvrouter/rpcapi"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
 )
 
-func (h *Router) RunHTTPServer(addr string) error {
+func (h *Router) HTTPHandler() *httprouter.Router {
 	r := httprouter.New()
 	//r.POST("/node", h.HTTPRegister)
 	r.GET("/nodes", h.Nodes)
 	r.POST("/put/:key", h.Store)
 	r.GET("/get/:key", h.Receive)
 	r.GET("/list", h.Explore)
-
-	log.Printf("Run server [%s]", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
-		return err
-	}
-	return nil
+	return r
 }
 
 func (h *Router) Store(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -114,12 +110,12 @@ func (h *Router) Nodes(w http.ResponseWriter, r *http.Request, ps httprouter.Par
 	}
 }
 
-func (h *Router) nodes() ([]NodeMeta, error) {
+func (h *Router) nodes() ([]rpcapi.NodeMeta, error) {
 	ns, err := h.bal.Nodes()
 	if err != nil {
 		return nil, err
 	}
-	metas := make([]NodeMeta, len(ns))
+	metas := make([]rpcapi.NodeMeta, len(ns))
 	for iter, n := range ns {
 		metas[iter] = n.Meta()
 	}

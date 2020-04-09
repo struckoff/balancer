@@ -1,4 +1,4 @@
-package kvrouter
+package router
 
 import (
 	"encoding/json"

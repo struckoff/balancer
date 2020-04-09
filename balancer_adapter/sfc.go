@@ -5,7 +5,8 @@ import (
 	balancer "github.com/struckoff/SFCFramework"
 	"github.com/struckoff/SFCFramework/optimizer"
 	"github.com/struckoff/SFCFramework/transform"
-	"github.com/struckoff/kvrouter"
+	"github.com/struckoff/kvrouter/config"
+	"github.com/struckoff/kvrouter/router"
 )
 
 // DataItem represents string key as balancer item
@@ -23,11 +24,11 @@ type SFCBalancer struct {
 	bal *balancer.Balancer
 }
 
-func NewSFCBalancer(conf *kvrouter.Config) (*SFCBalancer, error) {
+func NewSFCBalancer(conf *config.BalancerConfig) (*SFCBalancer, error) {
 	bal, err := balancer.NewBalancer(
-		conf.Balancer.Curve.CurveType,
-		conf.Balancer.Dimensions,
-		conf.Balancer.Size,
+		conf.Curve.CurveType,
+		conf.Dimensions,
+		conf.Size,
 		transform.KVTransform,
 		optimizer.RangeOptimizer,
 		nil)
@@ -37,7 +38,7 @@ func NewSFCBalancer(conf *kvrouter.Config) (*SFCBalancer, error) {
 	return &SFCBalancer{bal: bal}, nil
 }
 
-func (sb *SFCBalancer) AddNode(n kvrouter.Node) error {
+func (sb *SFCBalancer) AddNode(n router.Node) error {
 	return sb.bal.AddNode(n, true)
 }
 
@@ -45,7 +46,7 @@ func (sb *SFCBalancer) RemoveNode(id string) error {
 	return sb.bal.RemoveNode(id)
 }
 
-func (sb *SFCBalancer) SetNodes(ns []kvrouter.Node) error {
+func (sb *SFCBalancer) SetNodes(ns []router.Node) error {
 	sb.bal.Space().SetGroups(nil)
 	for _, node := range ns {
 		if err := sb.bal.AddNode(node, false); err != nil {
@@ -58,24 +59,24 @@ func (sb *SFCBalancer) SetNodes(ns []kvrouter.Node) error {
 	return nil
 }
 
-func (sb *SFCBalancer) LocateKey(key string) (kvrouter.Node, error) {
+func (sb *SFCBalancer) LocateKey(key string) (router.Node, error) {
 	di := DataItem(key)
 	nb, err := sb.bal.LocateData(di)
 	if err != nil {
 		return nil, err
 	}
-	n, ok := nb.(kvrouter.Node)
+	n, ok := nb.(router.Node)
 	if !ok {
 		return nil, errors.New("wrong node type")
 	}
 	return n, nil
 }
 
-func (sb *SFCBalancer) Nodes() ([]kvrouter.Node, error) {
+func (sb *SFCBalancer) Nodes() ([]router.Node, error) {
 	nbs := sb.bal.Nodes()
-	ns := make([]kvrouter.Node, len(nbs))
+	ns := make([]router.Node, len(nbs))
 	for iter := range nbs {
-		n, ok := nbs[iter].(kvrouter.Node)
+		n, ok := nbs[iter].(router.Node)
 		if !ok {
 			return nil, errors.New("wrong node type")
 		}

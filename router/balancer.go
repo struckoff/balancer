@@ -1,4 +1,4 @@
-package kvrouter
+package router
 
 type Balancer interface {
 	AddNode(n Node) error

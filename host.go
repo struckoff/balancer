@@ -1,216 +1,86 @@
 package kvrouter
 
 import (
-	"google.golang.org/grpc"
-	consulapi "github.com/hashicorp/consul/api"
-	consulwatch "github.com/hashicorp/consul/api/watch"
+	"context"
 	"github.com/pkg/errors"
+	"github.com/struckoff/kvrouter/balancer_adapter"
+	"github.com/struckoff/kvrouter/config"
+	"github.com/struckoff/kvrouter/router"
+	"github.com/struckoff/kvrouter/rpcapi"
+	"github.com/struckoff/kvrouter/ttl"
 	"log"
-	"strconv"
-	"strings"
-	"time"
+	"net/http"
 )
 
-// Router represents bounding of network api with kvrouter lib and local node
-type Router struct {
-	bal       Balancer
-	rpcserver *grpc.Server
-	consul    *consulapi.Client
+type Host struct {
+	kvr    *router.Router
+	checks *ttl.ChecksMap
 }
 
-func NewRouter(bal Balancer, c *consulapi.Client) (*Router, error) {
-	h := &Router{
-		bal:    bal,
-		consul: c,
+func deadHandler(nodeID string) func() {
+	return func() {
+		log.Printf("node(%s) seems to be dead", nodeID)
+	}
+}
+
+func (h *Host) removeHandler(nodeID string) func() {
+	return func() {
+		if err := h.kvr.RemoveNode(nodeID); err != nil {
+			log.Printf("Error removing node(%s): %s", nodeID, err.Error())
+		}
+		h.checks.Delete(nodeID)
+		log.Printf("node(%s) removed", nodeID)
+	}
+}
+
+func (h *Host) RPCRegister(ctx context.Context, in *rpcapi.NodeMeta) (*rpcapi.Empty, error) {
+	en, err := router.NewExternalNode(in)
+	if err != nil {
+		return nil, err
+	}
+
+	onDead := deadHandler(en.ID())
+	onRemove := h.removeHandler(en.ID())
+	check, err := ttl.NewTTLCheck(in.Check, onDead, onRemove)
+	if err != nil {
+		return nil, err
+	}
+	h.checks.Store(en.ID(), check)
+	if err := h.kvr.AddNode(en); err != nil {
+		return nil, err
+	}
+	log.Printf("node(%s) registered", en.ID())
+	return &rpcapi.Empty{}, nil
+}
+
+func (h *Host) RPCHeartbeat(ctx context.Context, in *rpcapi.Ping) (*rpcapi.Empty, error) {
+	if ok := h.checks.Update(in.NodeID); !ok {
+		return nil, errors.Errorf("unable to found check for node(%s)", in.NodeID)
+	}
+	return &rpcapi.Empty{}, nil
+}
+
+func (h *Host) RunHTTPServer(addr string) error {
+	r := h.kvr.HTTPHandler()
+	log.Printf("Run server [%s]", addr)
+	if err := http.ListenAndServe(addr, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func NewHost(conf *config.Config) (*Host, error) {
+	bal, err := balancer_adapter.NewSFCBalancer(conf.Balancer)
+	if err != nil {
+		return nil, err
+	}
+	kvr, err := router.NewRouter(bal)
+	if err != nil {
+		return nil, err
+	}
+	h := &Host{
+		kvr:    kvr,
+		checks: ttl.NewChecksMap(),
 	}
 	return h, nil
-}
-
-// AddNode adds node to kvrouter
-func (h *Router) AddNode(n Node) error {
-	return h.bal.AddNode(n)
-}
-
-// RemoveNode removes node from kvrouter
-func (h *Router) RemoveNode(id string) error {
-	return h.bal.RemoveNode(id)
-}
-
-// Returns node from kvrouter by given key.
-func (h *Router) GetNode(key string) (Node, error) {
-	//di := DataItem(key)
-	nb, err := h.bal.LocateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	n, ok := nb.(Node)
-	if !ok {
-		return nil, errors.New("wrong node type")
-	}
-	return n, nil
-}
-
-func (h *Router) RunConsul(conf *Config) error {
-	if err := h.consulAnnounce(conf); err != nil {
-		return errors.Wrap(err, "unable to run announce node in consul")
-	}
-	if err := h.consulWatch(conf); err != nil {
-		return errors.Wrap(err, "unable to run consul watcher")
-	}
-	return nil
-}
-
-func (h *Router) consulAnnounce(conf *Config) (err error) {
-	checkID := h.n.ID() + "_ttl"
-
-	addrParts := strings.Split(conf.RPCAddress, ":")
-	if len(addrParts) < 2 {
-		return errors.New("address format should be HOST:PORT")
-	}
-	port, err := strconv.ParseInt(addrParts[1], 10, 64)
-	if err != nil {
-		return err
-	}
-
-	checkInterval, err := time.ParseDuration(conf.Consul.CheckInterval)
-	if err != nil {
-		return err
-	}
-	checkTimeout, err := time.ParseDuration(conf.Consul.CheckTimeout)
-	if err != nil {
-		return err
-	}
-
-	// Create heartbeat check
-	acc := consulapi.AgentServiceCheck{
-		CheckID: checkID,
-		Name:    checkID,
-		Status:  "passing",
-		//TCP:      conf.RPCAddress,
-		//Interval: conf.ConfigConsul.CheckInterval,
-		//Timeout:  conf.ConfigConsul.CheckTimeout,
-		//AliasNode:                      conf.Name,
-		//AliasService:                   conf.ConfigConsul.Service,
-		DeregisterCriticalServiceAfter: conf.Consul.DeregisterCriticalServiceAfter,
-		TTL:                            (checkInterval + checkTimeout).String(),
-	}
-
-	service := &consulapi.AgentServiceRegistration{
-		ID:   conf.Consul.Service,
-		Name: conf.Consul.Service,
-		//Tags:              nil,
-		Port:      int(port),
-		Address:   addrParts[0],
-		Check:     &acc,
-		Namespace: conf.Consul.Namespace,
-		Meta: map[string]string{
-			"power": checkID,
-		},
-	}
-
-	if err := h.consul.Agent().ServiceRegister(service); err != nil {
-		return err
-	}
-
-	// Run TTL updater
-	go h.updateTTL(checkInterval, checkID)
-
-	return nil
-}
-func (h *Router) consulWatch(conf *Config) error {
-	filter := map[string]interface{}{
-		"type":    "service",
-		"service": conf.Consul.Service,
-	}
-
-	pl, err := consulwatch.Parse(filter)
-	if err != nil {
-		return err
-	}
-	pl.Handler = h.serviceHandler
-	return pl.RunWithConfig(conf.Consul.Address, &conf.Consul.Config)
-}
-func (h *Router) serviceHandler(id uint64, data interface{}) {
-	nCh := make(chan Node)
-	defer close(nCh)
-	entries, ok := data.([]*consulapi.ServiceEntry)
-	//fmt.Println(id, len(entries))
-	if !ok {
-		return
-	}
-	for _, entry := range entries {
-		addr := fmt.Sprintf("%s:%d", entry.Service.Address, entry.Service.Port)
-		go h.registerExternalNode(entry.Node.Node, addr, nCh)
-	}
-	count := len(entries)
-	ns := make([]Node, 0, count)
-	for node := range nCh {
-		count--
-		if node != nil {
-			ns = append(ns, node)
-		}
-		if count == 0 {
-			break
-		}
-	}
-	if err := h.bal.SetNodes(ns); err != nil {
-		log.Println(err.Error())
-	}
-	locations, err := h.keysLocations()
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	h.relocate(locations)
-}
-func (h *Router) registerExternalNode(id, addr string, nCh chan<- Node) {
-	if id == h.n.ID() {
-		nCh <- h.n
-		return
-	}
-	en, err := NewExternalNode(addr)
-	if err != nil {
-		log.Printf("unable to connect to node %s(%s)", id, addr)
-		nCh <- nil
-		return
-	}
-	nCh <- en
-	log.Printf("registered node %s(%s)", id, addr)
-}
-func (h *Router) keysLocations() (map[Node][]string, error) {
-	res := make(map[Node][]string)
-	keys, err := h.n.Explore()
-	if err != nil {
-		return nil, err
-	}
-	for iter := range keys {
-		n, err := h.bal.LocateKey(keys[iter])
-		if err != nil {
-			return nil, err
-		}
-		if n.ID() != h.n.ID() {
-			res[n] = append(res[n], keys[iter])
-		}
-	}
-	return res, nil
-}
-func (h *Router) relocate(locations map[Node][]string) {
-	for n, keys := range locations {
-		go func(n Node, keys []string) {
-			if err := h.n.Move(keys, n); err != nil {
-				log.Println(err.Error())
-				return
-			}
-		}(n, keys)
-	}
-}
-
-func (h *Router) updateTTL(interval time.Duration, checkID string) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for range ticker.C {
-		if err := h.consul.Agent().PassTTL(checkID, ""); err != nil {
-			log.Printf("err=\"Check failed\" msg=\"%s\"", err.Error())
-		}
-	}
 }
