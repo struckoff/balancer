@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"github.com/kelseyhightower/envconfig"
 	"github.com/struckoff/kvrouter"
 	"github.com/struckoff/kvrouter/config"
 	"github.com/struckoff/kvrouter/rpcapi"
@@ -30,6 +31,10 @@ func run() error {
 	}
 	defer configFile.Close()
 	if err := json.NewDecoder(configFile).Decode(&conf); err != nil {
+		return err
+	}
+
+	if err := envconfig.Process("KVROUTER", &conf); err != nil {
 		return err
 	}
 
