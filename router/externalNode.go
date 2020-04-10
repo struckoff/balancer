@@ -13,19 +13,21 @@ import (
 // It also contains meta information
 type ExternalNode struct {
 	mu         sync.RWMutex
-	id         string
-	address    string
-	rpcaddress string
+	id         string // uniq node ID
+	address    string // node HTTP address
+	rpcaddress string // node RPC address
 	p          Power
 	c          Capacity
 	rpcclient  rpcapi.RPCNodeClient
 }
 
+// ID  returns the node ID
 func (n *ExternalNode) ID() string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return n.id
 }
+
 func (n *ExternalNode) Power() balancer.Power {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -47,6 +49,7 @@ func (n *ExternalNode) Store(key string, body []byte) error {
 	return nil
 }
 
+// Save key/value pairs on remote node
 func (n *ExternalNode) StorePairs(pairs []*rpcapi.KeyValue) error {
 	log.Printf("Store pairs on %s", n.id)
 	req := rpcapi.KeyValues{KVs: pairs}
@@ -67,6 +70,7 @@ func (n *ExternalNode) Receive(key string) ([]byte, error) {
 	return res.Value, nil
 }
 
+// Explore returns the list of keys on remote node
 func (n *ExternalNode) Explore() ([]string, error) {
 	log.Printf("Exploring %s", n.id)
 	req := rpcapi.Empty{}
@@ -77,6 +81,7 @@ func (n *ExternalNode) Explore() ([]string, error) {
 	return res.Keys, nil
 }
 
+// Remove value for a given key
 func (n *ExternalNode) Remove(key string) error {
 	log.Printf("Remove key(%s) from %s", key, n.id)
 	req := rpcapi.KeyReq{Key: key}
@@ -97,6 +102,7 @@ func (n *ExternalNode) Meta() rpcapi.NodeMeta {
 	}
 }
 
+// Move keys  from remote node to another remote node.
 func (n *ExternalNode) Move(nk map[Node][]string) error {
 	mr := &rpcapi.MoveReq{}
 	for en, keys := range nk {
@@ -111,6 +117,7 @@ func (n *ExternalNode) Move(nk map[Node][]string) error {
 	return err
 }
 
+// NewExternalNode - create a new instance of an external by given meta information.
 func NewExternalNode(meta *rpcapi.NodeMeta) (*ExternalNode, error) {
 	conn, err := grpc.Dial(meta.RPCAddress, grpc.WithInsecure()) // TODO Make it secure
 	if err != nil {
@@ -127,6 +134,8 @@ func NewExternalNode(meta *rpcapi.NodeMeta) (*ExternalNode, error) {
 	}, nil
 }
 
+// NewExternalNodeByAddr - create a new instance of an external node.
+// Function asks remote node for it meta information by RPC
 func NewExternalNodeByAddr(rpcaddr string) (*ExternalNode, error) {
 	c, err := enClient(rpcaddr)
 	if err != nil {

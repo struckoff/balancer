@@ -8,11 +8,11 @@ import (
 
 type Check struct {
 	mu          sync.RWMutex
-	deadman     time.Duration
-	removeAfter time.Duration
+	deadman     time.Duration // How long to wait unit node will be declared dead
+	removeAfter time.Duration // How long to wait unit node will be removed
 
-	timerDead   *time.Timer
-	timerRemove *time.Timer
+	timerDead   *time.Timer // Timer that set node dead and start Check.timerRemove
+	timerRemove *time.Timer // Timer that remove node
 }
 
 func NewTTLCheck(hc *rpcapi.HealthCheck, onDead, onRemove func()) (*Check, error) {

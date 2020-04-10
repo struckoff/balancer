@@ -21,6 +21,7 @@ func (h *Router) HTTPHandler() *httprouter.Router {
 	return r
 }
 
+// Store value for a given key on the remote node
 func (h *Router) Store(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	if r.Body != nil {
 		defer r.Body.Close()
@@ -46,6 +47,8 @@ func (h *Router) Store(w http.ResponseWriter, r *http.Request, ps httprouter.Par
 		return
 	}
 }
+
+//Receive value for a given key from the remote node
 func (h *Router) Receive(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	if r.Body != nil {
 		defer r.Body.Close()
@@ -68,6 +71,8 @@ func (h *Router) Receive(w http.ResponseWriter, r *http.Request, ps httprouter.P
 		return
 	}
 }
+
+//Explore returns a list of keys on nodes
 func (h *Router) Explore(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	res, err := h.nodeKeys()
 	if err != nil {
@@ -84,6 +89,8 @@ func (h *Router) Explore(w http.ResponseWriter, r *http.Request, ps httprouter.P
 		return
 	}
 }
+
+// Nodes returns a list of nodes
 func (h *Router) Nodes(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	metas, err := h.nodes()
 	if err != nil {

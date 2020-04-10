@@ -15,13 +15,3 @@ type Node interface {
 	Meta() rpcapi.NodeMeta               // Return information about cluster units
 	Move(map[Node][]string) error        // Move kv pairs to another node
 }
-
-//// NodeMeta represents node meta information with exposed fields
-//// for marshaling and unmarshaling
-//type NodeMeta struct {
-//	ID         string
-//	Address    string
-//	RPCAddress string
-//	Power      float64
-//	Capacity   float64
-//}

@@ -40,25 +40,17 @@ func (h *Router) LocateKey(key string) (Node, error) {
 	return n, nil
 }
 
+// GetNodes - returns a list of nodes in the balancer
 func (h *Router) GetNodes() ([]Node, error) {
 	return h.bal.Nodes()
 }
 
+// SetNodes - removes all nodes from the balancer and set a new ones
 func (h *Router) SetNodes(ns []Node) error {
 	return h.bal.SetNodes(ns)
 }
 
+// GetNode returns the node with the given ID
 func (h *Router) GetNode(id string) (Node, error) {
 	return h.bal.GetNode(id)
 }
-
-//func (h *Router) relocate(locations map[Node][]string) {
-//	for n, keys := range locations {
-//		go func(n Node, keys []string) {
-//			if err := h.n.Move(keys, n); err != nil {
-//				log.Println(err.Error())
-//				return
-//			}
-//		}(n, keys)
-//	}
-//}
